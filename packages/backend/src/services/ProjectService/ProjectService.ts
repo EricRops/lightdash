@@ -919,8 +919,18 @@ export class ProjectService extends BaseService {
                 const tenantId = userAttributes?.tenant_id?.[0]; // tenant_id is an array in UserAttributeValueMap
                 const tenantDatasetProject = process.env.BIGQUERY_TENANT_DATA_PROJECT;
                 const datasetPrefix = process.env.BIGQUERY_DATASET_PREFIX;
+                const narvarTenantId = process.env.NARVAR_TENANT_ID;
 
-                if (tenantId && tenantDatasetProject && datasetPrefix) {
+                // tenant_id is ALWAYS required for BigQuery access
+                if (!tenantId) {
+                    throw new ForbiddenError(
+                        'BigQuery access requires a tenant_id user attribute. Please contact your administrator to assign a tenant_id.',
+                    );
+                }
+
+                // Determine if we're in multi-tenant mode or non-tenant mode
+                if (tenantDatasetProject && datasetPrefix) {
+                    // Multi-tenant mode: Use service account impersonation
                     // Construct tenant service account email
                     const tenantServiceAccountEmail = `${tenantId}-sa@${tenantDatasetProject}.iam.gserviceaccount.com`;
 
@@ -932,6 +942,14 @@ export class ProjectService extends BaseService {
                         datasetPrefix,
                     };
                 } else {
+                    // Non-tenant mode: Only allowed for NARVAR_TENANT_ID
+                    if (tenantId !== narvarTenantId) {
+                        throw new ForbiddenError(
+                            'Access denied. Your tenant_id is not authorized to access this BigQuery instance in non-tenant mode.',
+                        );
+                    }
+
+                    // Standard BigQuery credentials (no impersonation or dataset injection)
                     credentialsWithOverrides = warehouseSshCredentials;
                 }
                 break;

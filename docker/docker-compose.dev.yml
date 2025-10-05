@@ -74,6 +74,7 @@ x-lightdash-environment: &lightdash-environment
     LIGHTDASH_PROMETHEUS_ENABLED: ${LIGHTDASH_PROMETHEUS_ENABLED}
     BIGQUERY_TENANT_DATA_PROJECT: ${BIGQUERY_TENANT_DATA_PROJECT}
     BIGQUERY_DATASET_PREFIX: ${BIGQUERY_DATASET_PREFIX}
+    NARVAR_TENANT_ID: ${NARVAR_TENANT_ID}
 
 x-lightdash-base: &lightdash-base
     build: *lightdash-build
