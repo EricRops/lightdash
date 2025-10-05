@@ -11,6 +11,7 @@
         "@clickhouse/client": "^1.12.1",
         "@databricks/sql": "1.8.4",
         "@google-cloud/bigquery": "^7.9.2",
+        "google-auth-library": "^9.0.0",
         "@lightdash/common": "workspace:*",
         "lodash": "^4.17.21",
         "pg": "^8.13.1",
