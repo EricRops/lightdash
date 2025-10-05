@@ -25,6 +25,9 @@ const LandingPanel: FC<Props> = ({ userName, projectUuid }) => {
                     Run a query to ask a business question or browse your data
                     below:
                 </Text>
+                <Text c="blue.6" size="xs" fw={600}>
+                    🚀 Internal Narvar Testing
+                </Text>
             </Stack>
             <Can
                 I="manage"

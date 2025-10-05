@@ -2928,6 +2928,9 @@ export class ProjectService extends BaseService {
                 usingStreaming: false,
             },
         });
+
+        const { userAttributes } = await this.getUserAttributes({ user });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
@@ -2935,6 +2938,9 @@ export class ProjectService extends BaseService {
                 userId: user.userUuid,
                 isSessionUser: true,
             }),
+            {
+                userAttributes,
+            },
         );
         this.logger.debug(`Run query against warehouse`);
         const queryTags: RunQueryTags = {
@@ -2984,6 +2990,14 @@ export class ProjectService extends BaseService {
                 usingStreaming: true,
             },
         });
+
+        // Get user attributes for tenant validation
+        const userAttributes =
+            await this.userAttributesModel.getAttributeValuesForOrgMember({
+                organizationUuid,
+                userUuid,
+            });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
@@ -2991,6 +3005,9 @@ export class ProjectService extends BaseService {
                 userId: userUuid,
                 isSessionUser: true,
             }),
+            {
+                userAttributes,
+            },
         );
         this.logger.debug(`Stream query against warehouse`);
         const queryTags: RunQueryTags = {
@@ -3073,9 +3090,20 @@ export class ProjectService extends BaseService {
                 usingStreaming: true,
             },
         });
+
+        // Get user attributes for tenant validation
+        const userAttributes =
+            await this.userAttributesModel.getAttributeValuesForOrgMember({
+                organizationUuid,
+                userUuid,
+            });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             warehouseCredentials,
+            {
+                userAttributes,
+            },
         );
 
         // Apply limit and pivot to the SQL query
@@ -4201,9 +4229,14 @@ export class ProjectService extends BaseService {
             isSessionUser: true,
         });
 
+        const { userAttributes } = await this.getUserAttributes({ user });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             credentials,
+            {
+                userAttributes,
+            },
         );
 
         const warehouseTables = await warehouseClient.getAllTables();
@@ -4307,9 +4340,14 @@ export class ProjectService extends BaseService {
             isSessionUser: true,
         });
 
+        const { userAttributes } = await this.getUserAttributes({ user });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             credentials,
+            {
+                userAttributes,
+            },
         );
 
         const queryTags: RunQueryTags = {
@@ -5904,13 +5942,19 @@ export class ProjectService extends BaseService {
                 'Virtual view with this name already exists',
             );
         }
+
+        const { userAttributes } = await this.getUserAttributes({ account });
+
         const { warehouseClient } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
                 projectUuid,
                 userId: account.user.id,
-                isSessionUser: true,
+                isSessionUser: account.isSessionUser(),
             }),
+            {
+                userAttributes,
+            },
         );
         const virtualView = await this.projectModel.createVirtualView(
             projectUuid,
@@ -5961,13 +6005,18 @@ export class ProjectService extends BaseService {
             throw new ForbiddenError();
         }
 
+        const { userAttributes } = await this.getUserAttributes({ account });
+
         const { warehouseClient } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
                 projectUuid,
                 userId: account.user.id,
-                isSessionUser: account.authentication.type === 'session',
+                isSessionUser: account.isSessionUser(),
             }),
+            {
+                userAttributes,
+            },
         );
 
         const updatedExplore = await this.projectModel.updateVirtualView(
@@ -6412,9 +6461,14 @@ export class ProjectService extends BaseService {
             (node: AnyType) => node.resource_type === 'model' && node.meta, // check that node.meta exists
         ) as DbtRawModelNode[];
 
+        const { userAttributes } = await this.getUserAttributes({ user });
+
         const { warehouseClient } = await this._getWarehouseClient(
             projectUuid,
             project.warehouseConnection,
+            {
+                userAttributes,
+            },
         );
 
         const [dbtModelNode, exploreErrors] =
