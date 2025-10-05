@@ -9,7 +9,6 @@ import {
     QueryResultsOptions,
     QueryRowsResponse,
 } from '@google-cloud/bigquery';
-import { GoogleAuth, Impersonated } from 'google-auth-library';
 import bigquery from '@google-cloud/bigquery/build/src/types';
 import {
     AnyType,
@@ -28,6 +27,7 @@ import {
     WarehouseResults,
     WarehouseTypes,
 } from '@lightdash/common';
+import { GoogleAuth, Impersonated, type AuthClient } from 'google-auth-library';
 import { pipeline, Transform } from 'stream';
 import {
     WarehouseCatalog,
@@ -199,14 +199,15 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
 
                 // Create impersonated credentials
                 const impersonatedClient = new Impersonated({
-                    sourceClient: auth,
+                    sourceClient: auth as unknown as AuthClient,
                     targetPrincipal: credentials.tenantServiceAccountEmail,
                     targetScopes: ['https://www.googleapis.com/auth/bigquery'],
                     lifetime: 3600, // 1 hour token lifetime
                 });
 
                 this.client = new BigQuery({
-                    projectId: credentials.executionProject || credentials.project,
+                    projectId:
+                        credentials.executionProject || credentials.project,
                     location: credentials.location || undefined,
                     maxRetries: credentials.retries,
                     authClient: impersonatedClient,
@@ -214,7 +215,8 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
             } else {
                 // Standard authentication (non-tenant mode)
                 this.client = new BigQuery({
-                    projectId: credentials.executionProject || credentials.project,
+                    projectId:
+                        credentials.executionProject || credentials.project,
                     location: credentials.location || undefined,
                     maxRetries: credentials.retries,
 
