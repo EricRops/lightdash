@@ -844,6 +844,7 @@ export class ProjectService extends BaseService {
         overrides?: {
             snowflakeVirtualWarehouse?: string;
             databricksCompute?: string;
+            userAttributes?: UserAttributeValueMap;
         },
     ): Promise<{
         warehouseClient: WarehouseClient;
@@ -854,7 +855,7 @@ export class ProjectService extends BaseService {
         const sshTunnel = new SshTunnel(credentials);
         const warehouseSshCredentials = await sshTunnel.connect();
 
-        const { snowflakeVirtualWarehouse, databricksCompute } =
+        const { snowflakeVirtualWarehouse, databricksCompute, userAttributes } =
             overrides || {};
 
         const cacheKey = `${projectUuid}${snowflakeVirtualWarehouse || ''}${
@@ -913,9 +914,29 @@ export class ProjectService extends BaseService {
                     httpPath: getDatabricksHttpPath(warehouseSshCredentials),
                 };
                 break;
+            case WarehouseTypes.BIGQUERY:
+                // Add multi-tenant support for BigQuery
+                const tenantId = userAttributes?.tenant_id?.[0]; // tenant_id is an array in UserAttributeValueMap
+                const tenantDatasetProject = process.env.BIGQUERY_TENANT_DATA_PROJECT;
+                const datasetPrefix = process.env.BIGQUERY_DATASET_PREFIX;
+
+                if (tenantId && tenantDatasetProject && datasetPrefix) {
+                    // Construct tenant service account email
+                    const tenantServiceAccountEmail = `${tenantId}-sa@${tenantDatasetProject}.iam.gserviceaccount.com`;
+
+                    credentialsWithOverrides = {
+                        ...warehouseSshCredentials,
+                        tenantId,
+                        tenantServiceAccountEmail,
+                        tenantDatasetProject,
+                        datasetPrefix,
+                    };
+                } else {
+                    credentialsWithOverrides = warehouseSshCredentials;
+                }
+                break;
             case WarehouseTypes.REDSHIFT:
             case WarehouseTypes.POSTGRES:
-            case WarehouseTypes.BIGQUERY:
             case WarehouseTypes.TRINO:
             case WarehouseTypes.CLICKHOUSE:
                 credentialsWithOverrides = warehouseSshCredentials;
@@ -1770,6 +1791,9 @@ export class ProjectService extends BaseService {
         dateZoom,
         parameters,
         availableParameterDefinitions,
+        tenantDatasetProject,
+        datasetPrefix,
+        tenantId,
     }: {
         metricQuery: MetricQuery;
         explore: Explore;
@@ -1780,6 +1804,9 @@ export class ProjectService extends BaseService {
         dateZoom?: DateZoom;
         parameters?: ParametersValuesMap;
         availableParameterDefinitions: ParameterDefinitions;
+        tenantDatasetProject?: string;
+        datasetPrefix?: string;
+        tenantId?: string;
     }): Promise<CompiledQuery> {
         const availableParameters = Object.keys(availableParameterDefinitions);
 
@@ -1807,6 +1834,9 @@ export class ProjectService extends BaseService {
             timezone,
             parameters,
             parameterDefinitions: availableParameterDefinitions,
+            tenantDatasetProject,
+            datasetPrefix,
+            tenantId,
         });
 
         return wrapSentryTransactionSync('QueryBuilder.buildQuery', {}, () =>
@@ -1872,6 +1902,9 @@ export class ProjectService extends BaseService {
                 ? args.explore
                 : await this.getExplore(account, projectUuid, args.exploreName);
 
+        const { userAttributes, intrinsicUserAttributes } =
+            await this.getUserAttributes({ account });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
@@ -1882,16 +1915,19 @@ export class ProjectService extends BaseService {
             {
                 snowflakeVirtualWarehouse: explore.warehouse,
                 databricksCompute: explore.databricksCompute,
+                userAttributes,
             },
         );
-
-        const { userAttributes, intrinsicUserAttributes } =
-            await this.getUserAttributes({ account });
 
         const availableParameterDefinitions = await this.getAvailableParameters(
             projectUuid,
             explore,
         );
+
+        // Extract tenant info from BigQuery credentials for query building
+        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+            ? warehouseClient.credentials
+            : undefined;
 
         const compiledQuery = await ProjectService._compileQuery({
             metricQuery,
@@ -1902,6 +1938,9 @@ export class ProjectService extends BaseService {
             timezone: this.lightdashConfig.query.timezone || 'UTC',
             parameters,
             availableParameterDefinitions,
+            tenantDatasetProject: bqCreds?.tenantDatasetProject,
+            datasetPrefix: bqCreds?.datasetPrefix,
+            tenantId: bqCreds?.tenantId,
         });
 
         await sshTunnel.disconnect();
@@ -2713,6 +2752,11 @@ export class ProjectService extends BaseService {
                             exploreName,
                         ));
 
+                    const { userAttributes, intrinsicUserAttributes } =
+                        await this.getUserAttributes({
+                            account,
+                        });
+
                     const { warehouseClient, sshTunnel } =
                         await this._getWarehouseClient(
                             projectUuid,
@@ -2724,16 +2768,17 @@ export class ProjectService extends BaseService {
                             {
                                 snowflakeVirtualWarehouse: explore.warehouse,
                                 databricksCompute: explore.databricksCompute,
+                                userAttributes,
                             },
                         );
 
-                    const { userAttributes, intrinsicUserAttributes } =
-                        await this.getUserAttributes({
-                            account,
-                        });
-
                     const availableParameterDefinitions =
                         await this.getAvailableParameters(projectUuid, explore);
+
+                    // Extract tenant info from BigQuery credentials for query building
+                    const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+                        ? warehouseClient.credentials
+                        : undefined;
 
                     const fullQuery = await ProjectService._compileQuery({
                         metricQuery: metricQueryWithLimit,
@@ -2745,6 +2790,9 @@ export class ProjectService extends BaseService {
                         dateZoom,
                         parameters,
                         availableParameterDefinitions,
+                        tenantDatasetProject: bqCreds?.tenantDatasetProject,
+                        datasetPrefix: bqCreds?.datasetPrefix,
+                        tenantId: bqCreds?.tenantId,
                     });
 
                     const { query } = fullQuery;
@@ -3330,6 +3378,9 @@ export class ProjectService extends BaseService {
                 filters,
             });
 
+        const { userAttributes, intrinsicUserAttributes } =
+            await this.getUserAttributes({ user });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
@@ -3340,15 +3391,19 @@ export class ProjectService extends BaseService {
             {
                 snowflakeVirtualWarehouse: explore.warehouse,
                 databricksCompute: explore.databricksCompute,
+                userAttributes,
             },
         );
-        const { userAttributes, intrinsicUserAttributes } =
-            await this.getUserAttributes({ user });
 
         const availableParameterDefinitions = await this.getAvailableParameters(
             projectUuid,
             explore,
         );
+
+        // Extract tenant info from BigQuery credentials for query building
+        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+            ? warehouseClient.credentials
+            : undefined;
 
         const { query } = await ProjectService._compileQuery({
             metricQuery,
@@ -3359,6 +3414,9 @@ export class ProjectService extends BaseService {
             timezone: this.lightdashConfig.query.timezone || 'UTC',
             parameters,
             availableParameterDefinitions,
+            tenantDatasetProject: bqCreds?.tenantDatasetProject,
+            datasetPrefix: bqCreds?.datasetPrefix,
+            tenantId: bqCreds?.tenantId,
         });
 
         // Add a cache_autocomplete prefix to the query hash to avoid collisions with the results cache
@@ -5105,6 +5163,9 @@ export class ProjectService extends BaseService {
         warehouseClient: WarehouseClient,
         availableParameterDefinitions: ParameterDefinitions,
         parameters?: ParametersValuesMap,
+        tenantDatasetProject?: string,
+        datasetPrefix?: string,
+        tenantId?: string,
     ) {
         const totalQuery: MetricQuery = {
             ...metricQuery,
@@ -5139,6 +5200,9 @@ export class ProjectService extends BaseService {
             timezone: this.lightdashConfig.query.timezone || 'UTC',
             parameters,
             availableParameterDefinitions,
+            tenantDatasetProject,
+            datasetPrefix,
+            tenantId,
         });
 
         return { query, totalQuery };
@@ -5152,6 +5216,9 @@ export class ProjectService extends BaseService {
         organizationUuid: string,
         parameters?: ParametersValuesMap,
     ) {
+        const { userAttributes, intrinsicUserAttributes } =
+            await this.getUserAttributes({ account });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
@@ -5162,16 +5229,19 @@ export class ProjectService extends BaseService {
             {
                 snowflakeVirtualWarehouse: explore.warehouse,
                 databricksCompute: explore.databricksCompute,
+                userAttributes,
             },
         );
-
-        const { userAttributes, intrinsicUserAttributes } =
-            await this.getUserAttributes({ account });
 
         const availableParameterDefinitions = await this.getAvailableParameters(
             projectUuid,
             explore,
         );
+
+        // Extract tenant info from BigQuery credentials for query building
+        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+            ? warehouseClient.credentials
+            : undefined;
 
         try {
             const { query } = await this._getCalculateTotalQuery(
@@ -5182,6 +5252,9 @@ export class ProjectService extends BaseService {
                 warehouseClient,
                 availableParameterDefinitions,
                 parameters,
+                bqCreds?.tenantDatasetProject,
+                bqCreds?.datasetPrefix,
+                bqCreds?.tenantId,
             );
 
             const queryTags: RunQueryTags = {
@@ -5213,6 +5286,9 @@ export class ProjectService extends BaseService {
         organizationUuid: string,
         parameters?: ParametersValuesMap,
     ) {
+        const { userAttributes, intrinsicUserAttributes } =
+            await this.getUserAttributes({ account });
+
         const { warehouseClient, sshTunnel } = await this._getWarehouseClient(
             projectUuid,
             await this.getWarehouseCredentials({
@@ -5223,16 +5299,19 @@ export class ProjectService extends BaseService {
             {
                 snowflakeVirtualWarehouse: explore.warehouse,
                 databricksCompute: explore.databricksCompute,
+                userAttributes,
             },
         );
-
-        const { userAttributes, intrinsicUserAttributes } =
-            await this.getUserAttributes({ account });
 
         const availableParameterDefinitions = await this.getAvailableParameters(
             projectUuid,
             explore,
         );
+
+        // Extract tenant info from BigQuery credentials for query building
+        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+            ? warehouseClient.credentials
+            : undefined;
 
         try {
             const { query, totalQuery } = await this._getCalculateTotalQuery(
@@ -5243,6 +5322,9 @@ export class ProjectService extends BaseService {
                 warehouseClient,
                 availableParameterDefinitions,
                 parameters,
+                bqCreds?.tenantDatasetProject,
+                bqCreds?.datasetPrefix,
+                bqCreds?.tenantId,
             );
 
             const queryTags: RunQueryTags = {

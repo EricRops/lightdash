@@ -56,6 +56,11 @@ export type CreateBigqueryCredentials = {
     maximumBytesBilled: number | undefined;
     startOfWeek?: WeekDay | null;
     executionProject?: string;
+    // Multi-tenant support
+    tenantId?: string;
+    tenantServiceAccountEmail?: string;
+    tenantDatasetProject?: string;
+    datasetPrefix?: string;
 };
 export const sensitiveCredentialsFieldNames = [
     'user',

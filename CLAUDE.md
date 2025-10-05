@@ -186,3 +186,5 @@ curl -H "Authorization: ApiKey $LDPAT" "$SITE_URL/api/v1/org/projects"
 # Get root-level spaces only (using v2 content API)
 curl -H "Authorization: ApiKey $LDPAT" "$SITE_URL/api/v2/content?contentTypes=space&projectUuids=PROJECT_UUID&page=1&pageSize=25"
 ```
+
+Lastly, please read CLAUDE-narvar.md for the specific goals of the project at hand

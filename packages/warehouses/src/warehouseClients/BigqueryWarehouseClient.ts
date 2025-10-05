@@ -9,6 +9,7 @@ import {
     QueryResultsOptions,
     QueryRowsResponse,
 } from '@google-cloud/bigquery';
+import { GoogleAuth, Impersonated } from 'google-auth-library';
 import bigquery from '@google-cloud/bigquery/build/src/types';
 import {
     AnyType,
@@ -186,20 +187,43 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
     constructor(credentials: CreateBigqueryCredentials) {
         super(credentials, new BigquerySqlBuilder(credentials.startOfWeek));
         try {
-            this.client = new BigQuery({
-                projectId: credentials.executionProject || credentials.project,
-                // empty string is not a valid value for location
-                location: credentials.location || undefined,
-                maxRetries: credentials.retries,
+            // Handle service account impersonation for multi-tenant support
+            if (credentials.tenantServiceAccountEmail) {
+                const auth = new GoogleAuth({
+                    scopes: ['https://www.googleapis.com/auth/bigquery'],
+                    ...(credentials.authenticationType ===
+                    BigqueryAuthenticationType.ADC
+                        ? {}
+                        : { credentials: credentials.keyfileContents }),
+                });
 
-                ...(credentials.authenticationType ===
-                BigqueryAuthenticationType.ADC
-                    ? {
-                          // Support ADC via workforce identity federation / external_account configuration.
-                          // In this case we should rely on ADC at runtime and not pass explicit credentials.
-                      }
-                    : { credentials: credentials.keyfileContents }),
-            });
+                // Create impersonated credentials
+                const impersonatedClient = new Impersonated({
+                    sourceClient: auth,
+                    targetPrincipal: credentials.tenantServiceAccountEmail,
+                    targetScopes: ['https://www.googleapis.com/auth/bigquery'],
+                    lifetime: 3600, // 1 hour token lifetime
+                });
+
+                this.client = new BigQuery({
+                    projectId: credentials.executionProject || credentials.project,
+                    location: credentials.location || undefined,
+                    maxRetries: credentials.retries,
+                    authClient: impersonatedClient,
+                });
+            } else {
+                // Standard authentication (non-tenant mode)
+                this.client = new BigQuery({
+                    projectId: credentials.executionProject || credentials.project,
+                    location: credentials.location || undefined,
+                    maxRetries: credentials.retries,
+
+                    ...(credentials.authenticationType ===
+                    BigqueryAuthenticationType.ADC
+                        ? {}
+                        : { credentials: credentials.keyfileContents }),
+                });
+            }
         } catch (e: unknown) {
             throw new WarehouseConnectionError(
                 `Failed connection to ${credentials.project} in ${
