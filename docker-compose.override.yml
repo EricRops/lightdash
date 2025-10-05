@@ -1,0 +1,6 @@
+services:
+  lightdash:
+    build:
+      context: .
+      dockerfile: dockerfile
+    image: lightdash-local:latest
