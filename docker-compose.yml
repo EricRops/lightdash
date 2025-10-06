@@ -1,7 +1,8 @@
 version: '3.8'
 services:
     minio:
-        image: bitnami/minio:latest
+        image: minio/minio:latest
+        command: server /data --console-address ":9001"
         ports:
             - '9000:9000'
             - '9001:9001' # for minio console
@@ -9,6 +10,8 @@ services:
             - MINIO_ROOT_USER=minioadmin
             - MINIO_ROOT_PASSWORD=minioadmin
             - MINIO_DEFAULT_BUCKETS=default
+        volumes:
+            - minio-data:/data
     lightdash:
         platform: linux/amd64
         image: lightdash/lightdash:latest
@@ -108,3 +111,4 @@ services:
 
 volumes:
     db-data:
+    minio-data:

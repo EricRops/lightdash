@@ -22,8 +22,10 @@ To be compeleted if we decide to adopt LightDash.
 3. Push the changes to the remote github repo
 
 4. SSH into the VM
+
+  - `git pull origin impersonation-poc`
   # Stop current containers
-  `docker compose down`
+  - `docker compose down`
 
 5. Optional - If previous build was corrupted or failed, can do a full docker cleanup before rebuilding
   - docker builder prune -af
@@ -32,11 +34,32 @@ To be compeleted if we decide to adopt LightDash.
   - sudo systemctl restart docker
   - sudo systemctl status docker
 
-5. Pull in the changes to the VM, rebuild the image, and deploy
-  - `git pull origin impersonation-poc`
-  - `docker compose build lightdash`  # Can use --no-cache flag to build from scratch
+6A - Brand new image option
+
+  # Create/edit Docker daemon config:
+  `sudo nano /etc/docker/daemon.json`
+
+  # Add this configuration:
+  {
+    "max-concurrent-downloads": 3,
+    "max-concurrent-uploads": 3,
+    "builder": {
+      "gc": {
+        "enabled": true,
+        "defaultKeepStorage": "20GB"
+      }
+    }
+  }
+
+  ```
+  DOCKER_BUILDKIT=1 \
+  BUILDKIT_STEP_LOG_MAX_SIZE=50000000 \
+  BUILDKIT_STEP_LOG_MAX_SPEED=10000000 \
+  docker compose build --no-cache lightdash
+  ```
+  
   - `docker compose up --detach`
-  # Check logs (optional)
   - `docker compose logs -f lightdash`
 
+6B - Build new image with code change but use cache
 
