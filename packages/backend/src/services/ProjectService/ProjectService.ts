@@ -623,11 +623,21 @@ export class ProjectService extends BaseService {
             : account.organization.organizationUuid;
         const email = user ? user.email : account.user.email;
 
+        console.log('DEBUG getUserAttributes:', {
+            userId,
+            organizationUuid,
+            email,
+            hasUser: !!user,
+            hasAccount: !!account,
+        });
+
         const userAttributes =
             await this.userAttributesModel.getAttributeValuesForOrgMember({
                 organizationUuid: organizationUuid || '',
                 userUuid: userId || '',
             });
+
+        console.log('DEBUG userAttributes result:', userAttributes);
 
         const emailStatus = await this.emailModel.getPrimaryEmailStatus(userId);
         const intrinsicUserAttributes = emailStatus.isVerified
@@ -917,7 +927,8 @@ export class ProjectService extends BaseService {
             case WarehouseTypes.BIGQUERY:
                 // Add multi-tenant support for BigQuery
                 const tenantId = userAttributes?.tenant_id?.[0]; // tenant_id is an array in UserAttributeValueMap
-                const tenantDatasetProject = process.env.BIGQUERY_TENANT_DATA_PROJECT;
+                const tenantDatasetProject =
+                    process.env.BIGQUERY_TENANT_DATA_PROJECT;
                 const datasetPrefix = process.env.BIGQUERY_DATASET_PREFIX;
                 const narvarTenantId = process.env.NARVAR_TENANT_ID;
 
@@ -1943,9 +1954,10 @@ export class ProjectService extends BaseService {
         );
 
         // Extract tenant info from BigQuery credentials for query building
-        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
-            ? warehouseClient.credentials
-            : undefined;
+        const bqCreds =
+            warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+                ? warehouseClient.credentials
+                : undefined;
 
         const compiledQuery = await ProjectService._compileQuery({
             metricQuery,
@@ -2794,9 +2806,11 @@ export class ProjectService extends BaseService {
                         await this.getAvailableParameters(projectUuid, explore);
 
                     // Extract tenant info from BigQuery credentials for query building
-                    const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
-                        ? warehouseClient.credentials
-                        : undefined;
+                    const bqCreds =
+                        warehouseClient.credentials.type ===
+                        WarehouseTypes.BIGQUERY
+                            ? warehouseClient.credentials
+                            : undefined;
 
                     const fullQuery = await ProjectService._compileQuery({
                         metricQuery: metricQueryWithLimit,
@@ -3447,9 +3461,10 @@ export class ProjectService extends BaseService {
         );
 
         // Extract tenant info from BigQuery credentials for query building
-        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
-            ? warehouseClient.credentials
-            : undefined;
+        const bqCreds =
+            warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+                ? warehouseClient.credentials
+                : undefined;
 
         const { query } = await ProjectService._compileQuery({
             metricQuery,
@@ -5295,9 +5310,10 @@ export class ProjectService extends BaseService {
         );
 
         // Extract tenant info from BigQuery credentials for query building
-        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
-            ? warehouseClient.credentials
-            : undefined;
+        const bqCreds =
+            warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+                ? warehouseClient.credentials
+                : undefined;
 
         try {
             const { query } = await this._getCalculateTotalQuery(
@@ -5365,9 +5381,10 @@ export class ProjectService extends BaseService {
         );
 
         // Extract tenant info from BigQuery credentials for query building
-        const bqCreds = warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
-            ? warehouseClient.credentials
-            : undefined;
+        const bqCreds =
+            warehouseClient.credentials.type === WarehouseTypes.BIGQUERY
+                ? warehouseClient.credentials
+                : undefined;
 
         try {
             const { query, totalQuery } = await this._getCalculateTotalQuery(
