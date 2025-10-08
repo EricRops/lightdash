@@ -1597,10 +1597,17 @@ export class AsyncQueryService extends ProjectService {
                         });
 
                     const warehouseCredentialsType = warehouseCredentials.type;
+
+                    // Get user attributes for BigQuery tenant validation
+                    const { userAttributes } = await this.getUserAttributes({
+                        account,
+                    });
+
                     const warehouseCredentialsOverrides: RunAsyncWarehouseQueryArgs['warehouseCredentialsOverrides'] =
                         {
                             snowflakeVirtualWarehouse: explore.warehouse,
                             databricksCompute: explore.databricksCompute,
+                            userAttributes,
                         };
 
                     span.setAttribute('lightdash.projectUuid', projectUuid);

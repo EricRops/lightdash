@@ -926,6 +926,18 @@ export class ProjectService extends BaseService {
                 break;
             case WarehouseTypes.BIGQUERY:
                 // Add multi-tenant support for BigQuery
+                console.log('DEBUG BigQuery auth check:', {
+                    userAttributes,
+                    hasUserAttributes: !!userAttributes,
+                    tenantIdArray: userAttributes?.tenant_id,
+                    envVars: {
+                        BIGQUERY_TENANT_DATA_PROJECT:
+                            process.env.BIGQUERY_TENANT_DATA_PROJECT,
+                        BIGQUERY_DATASET_PREFIX:
+                            process.env.BIGQUERY_DATASET_PREFIX,
+                        NARVAR_TENANT_ID: process.env.NARVAR_TENANT_ID,
+                    },
+                });
                 const tenantId = userAttributes?.tenant_id?.[0]; // tenant_id is an array in UserAttributeValueMap
                 const tenantDatasetProject =
                     process.env.BIGQUERY_TENANT_DATA_PROJECT;
@@ -934,6 +946,9 @@ export class ProjectService extends BaseService {
 
                 // tenant_id is ALWAYS required for BigQuery access
                 if (!tenantId) {
+                    console.log(
+                        'ERROR: No tenantId found, throwing ForbiddenError',
+                    );
                     throw new ForbiddenError(
                         'BigQuery access requires a tenant_id user attribute. Please contact your administrator to assign a tenant_id.',
                     );

@@ -2,7 +2,30 @@
 To be compeleted if we decide to adopt LightDash.
 
 
-**Rapid Local Testing Deployment Flow**
+**Local Testing Flow**
+# Terminal 1: Backend (watches for changes)
+cd ../Repos/lightdash-fork
+export PATH="/Users/ericrops/Documents/Repos/lightdash-fork/venv/bin:$PATH"
+export PGHOST=localhost
+export PGPORT=5432
+export PGUSER=postgres
+export PGPASSWORD=password
+export PGDATABASE=postgres
+export LIGHTDASH_SECRET='not very secret'
+export BIGQUERY_TENANT_DATA_PROJECT=combined-tenant-data-project
+export BIGQUERY_DATASET_PREFIX=tenant
+export NARVAR_TENANT_ID=narvar
+pnpm -F backend dev
+
+# Terminal 2: Frontend (watches for changes)  
+pnpm -F frontend dev
+
+# Local postgres:
+psql -h localhost -p 5432 -U postgres -d postgres
+
+
+
+**Deployment to Compute Engine, Docker Compose**
 1. Make changes locally in the lightdash fork. 
 2. Local test to verify that the changes still yield a successful build:
 
@@ -24,17 +47,20 @@ To be compeleted if we decide to adopt LightDash.
 4. SSH into the VM
 
   - `git pull origin impersonation-poc`
-  # Stop current containers
   - `docker compose down`
 
-5. Optional - If previous build was corrupted or failed, can do a full docker cleanup before rebuilding
+**6A - Build new image with code change but use cache**
+  - `docker compose build lightdash`
+  - `docker compose up --detach`
+
+**6B - Brand new image option**
+
+  # Do a full docker cleanup before (optional)
   - `docker builder prune -af`
   - `docker image prune -a`
   - `docker system prune -a --volumes`
   - `sudo systemctl restart docker`
   - `sudo systemctl status docker`
-
-6A - Brand new image option
 
   # Create/edit Docker daemon config:
   `sudo nano /etc/docker/daemon.json`
@@ -61,5 +87,4 @@ To be compeleted if we decide to adopt LightDash.
   - `docker compose up --detach`
   - `docker compose logs -f lightdash`
 
-6B - Build new image with code change but use cache
 

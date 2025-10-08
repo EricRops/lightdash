@@ -16,6 +16,7 @@ import {
     type ResultsPaginationArgs,
     type RunQueryTags,
     type SortField,
+    type UserAttributeValueMap,
 } from '@lightdash/common';
 
 export type CommonAsyncQueryArgs = {
@@ -157,6 +158,7 @@ export type RunAsyncWarehouseQueryArgs = {
     warehouseCredentialsOverrides?: {
         snowflakeVirtualWarehouse?: string;
         databricksCompute?: string;
+        userAttributes?: UserAttributeValueMap;
     };
     pivotConfiguration?: PivotConfiguration;
     originalColumns?: ResultColumns;
