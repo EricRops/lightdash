@@ -189,8 +189,48 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
         try {
             // Handle service account impersonation for multi-tenant support
             if (credentials.tenantServiceAccountEmail) {
+                console.log('DEBUG: Environment variables for impersonation:');
+                console.log(
+                    '  GOOGLE_UNIVERSE_DOMAIN:',
+                    process.env.GOOGLE_UNIVERSE_DOMAIN,
+                );
+                console.log(
+                    '  GOOGLE_IAM_CREDENTIALS_ENDPOINT:',
+                    process.env.GOOGLE_IAM_CREDENTIALS_ENDPOINT,
+                );
+                console.log(
+                    '  BIGQUERY_TENANT_DATA_PROJECT:',
+                    process.env.BIGQUERY_TENANT_DATA_PROJECT,
+                );
+                console.log(
+                    '  tenantServiceAccountEmail:',
+                    credentials.tenantServiceAccountEmail,
+                );
+                console.log('DEBUG: Authentication setup for impersonation:');
+                console.log(
+                    '  authenticationType:',
+                    credentials.authenticationType,
+                );
+                console.log(
+                    '  Using ADC?',
+                    credentials.authenticationType ===
+                        BigqueryAuthenticationType.ADC,
+                );
+                console.log(
+                    '  Has keyfileContents?',
+                    !!credentials.keyfileContents,
+                );
+                console.log(
+                    '  keyfileContents.client_email:',
+                    credentials.keyfileContents?.client_email,
+                );
+
                 const auth = new GoogleAuth({
-                    scopes: ['https://www.googleapis.com/auth/bigquery'],
+                    scopes: [
+                        'https://www.googleapis.com/auth/bigquery',
+                        'https://www.googleapis.com/auth/iam', // Required for service account impersonation
+                    ],
+                    universeDomain: process.env.GOOGLE_UNIVERSE_DOMAIN,
                     ...(credentials.authenticationType ===
                     BigqueryAuthenticationType.ADC
                         ? {}
@@ -203,6 +243,7 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
                     targetPrincipal: credentials.tenantServiceAccountEmail,
                     targetScopes: ['https://www.googleapis.com/auth/bigquery'],
                     lifetime: 3600, // 1 hour token lifetime
+                    endpoint: process.env.GOOGLE_IAM_CREDENTIALS_ENDPOINT,
                 });
 
                 this.client = new BigQuery({
@@ -636,6 +677,17 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
         ) => void,
     ): Promise<WarehouseExecuteAsyncQuery> {
         try {
+            console.log(
+                'DEBUG executeAsyncQuery: About to execute SQL:',
+                sql.substring(0, 500),
+            );
+            console.log('DEBUG executeAsyncQuery: Using credentials:', {
+                project: this.credentials.project,
+                executionProject: this.credentials.executionProject,
+                tenantServiceAccountEmail:
+                    this.credentials.tenantServiceAccountEmail,
+                tenantId: this.credentials.tenantId,
+            });
             const [job] = await this.createJob(sql, {
                 tags,
             });
@@ -678,10 +730,18 @@ export class BigqueryWarehouseClient extends WarehouseBaseClient<CreateBigqueryC
                 durationMs: startTime && endTime ? endTime - startTime : 0,
             };
         } catch (e: unknown) {
+            console.log(
+                'DEBUG executeAsyncQuery ERROR:',
+                JSON.stringify(e, null, 2),
+            );
             if (BigqueryWarehouseClient.isBigqueryError(e)) {
                 const responseError: bigquery.IErrorProto | undefined =
                     e?.errors[0];
                 if (responseError) {
+                    console.log(
+                        'DEBUG BigQuery error details:',
+                        JSON.stringify(responseError, null, 2),
+                    );
                     throw this.parseError(responseError, sql);
                 }
             }

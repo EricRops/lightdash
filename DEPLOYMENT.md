@@ -3,19 +3,17 @@ To be compeleted if we decide to adopt LightDash.
 
 
 **Local Testing Flow**
+# Setup Minio (local S3-compatible storage server)
+docker-compose up -d minio
+# Create the "buckets" aka local folders
+docker exec -it $(docker ps -qf "name=minio") sh -c 'mkdir -p /data/default /data/results' 
+
 # Terminal 1: Backend (watches for changes)
 cd ../Repos/lightdash-fork
-export PATH="/Users/ericrops/Documents/Repos/lightdash-fork/venv/bin:$PATH"
-export PGHOST=localhost
-export PGPORT=5432
-export PGUSER=postgres
-export PGPASSWORD=password
-export PGDATABASE=postgres
-export LIGHTDASH_SECRET='not very secret'
-export BIGQUERY_TENANT_DATA_PROJECT=combined-tenant-data-project
-export BIGQUERY_DATASET_PREFIX=tenant
-export NARVAR_TENANT_ID=narvar
-pnpm -F backend dev
+
+# rebuild package(s) if you changed them
+`pnpm -F warehouses build` (or common)
+./venv/bin/start-backend.sh
 
 # Terminal 2: Frontend (watches for changes)  
 pnpm -F frontend dev

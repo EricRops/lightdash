@@ -326,6 +326,9 @@ export class AsyncQueryService extends ProjectService {
             throw new Error('Project UUID is required');
         }
 
+        // Get user attributes for BigQuery tenant validation
+        const { userAttributes } = await this.getUserAttributes({ account });
+
         const warehouseConnection = await this._getWarehouseClient(
             queryHistory.projectUuid,
             await this.getWarehouseCredentials({
@@ -333,6 +336,7 @@ export class AsyncQueryService extends ProjectService {
                 userId: account.user.id,
                 isSessionUser: account.isSessionUser(),
             }),
+            { userAttributes },
         );
 
         return warehouseConnection.warehouseClient.getAsyncQueryResults(

@@ -87,6 +87,7 @@ export type BuildQueryProps = {
     tenantDatasetProject?: string;
     datasetPrefix?: string;
     tenantId?: string;
+    baseDatasetName?: string; // Base dataset name for master tenant
 };
 
 export class MetricQueryBuilder {
@@ -101,15 +102,23 @@ export class MetricQueryBuilder {
     }
 
     /**
-     * Injects tenant dataset prefix into table references for multi-tenant BigQuery support
+     * Injects tenant dataset into table references for multi-tenant BigQuery support
      * Converts: `project.dataset.table` or `dataset.table`
-     * To: `{tenantDatasetProject}.{datasetPrefix}_{tenantId}.table`
+     *
+     * Logic:
+     * - Master tenant (tenantId matches NARVAR_TENANT_ID): Uses baseDatasetName (e.g., lightdash_test_combined)
+     * - Other tenants: Uses per-tenant dataset pattern `${datasetPrefix}_${tenantId}` (e.g., lightdash_test_customer1)
      */
     private injectTenantDataset(sqlTable: string): string {
-        const { tenantDatasetProject, datasetPrefix, tenantId } = this.args;
+        const {
+            tenantDatasetProject,
+            datasetPrefix,
+            tenantId,
+            baseDatasetName,
+        } = this.args;
 
-        // Only inject if all tenant parameters are provided
-        if (!tenantDatasetProject || !datasetPrefix || !tenantId) {
+        // Only inject if tenant parameters are provided
+        if (!tenantDatasetProject || !tenantId) {
             return sqlTable;
         }
 
@@ -120,8 +129,20 @@ export class MetricQueryBuilder {
         // Extract the table name (last part)
         const tableName = parts[parts.length - 1];
 
-        // Construct tenant dataset reference
-        const tenantDataset = `${datasetPrefix}_${tenantId}`;
+        // Determine which dataset to use based on tenant
+        let tenantDataset: string;
+        const masterTenantId = process.env.NARVAR_TENANT_ID;
+
+        if (tenantId === masterTenantId && baseDatasetName) {
+            // Master tenant uses the base dataset with all data
+            tenantDataset = baseDatasetName;
+        } else if (datasetPrefix) {
+            // Other tenants use per-tenant datasets
+            tenantDataset = `${datasetPrefix}_${tenantId}`;
+        } else {
+            // Fallback if no dataset can be determined
+            return sqlTable;
+        }
 
         // Return fully qualified table reference with backticks
         return `\`${tenantDatasetProject}.${tenantDataset}.${tableName}\``;
