@@ -43,15 +43,6 @@ gcloud projects get-iam-policy narvar-qa-202121 \
 ./../../Narvar/Project\ Documents/Metabase\ Replacement/scripts/list_sa_datasets_v2.sh
 
 
-## DEMO:
-- Show the lightdash test datasets in BQ, Discuss overall arch context,
-- Show the user account attributes 
-- Show narvar user querying combined data (has permission).  Show the impersonated SA in bigquery
-- callout the data visibility restriction in the lightdash UI
-- Show levi user querying levi data. Show the impersonated SA in bigquery
-- Show levi user querying combined and belk data (gets SA permission error). 
-   - Mention that this would only happen due to some bug! We will normally only show levi tables to the levi user
-
 
 ## TODO:
 
