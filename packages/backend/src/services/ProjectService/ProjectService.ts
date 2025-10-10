@@ -624,21 +624,11 @@ export class ProjectService extends BaseService {
             : account.organization.organizationUuid;
         const email = user ? user.email : account.user.email;
 
-        console.log('DEBUG getUserAttributes:', {
-            userId,
-            organizationUuid,
-            email,
-            hasUser: !!user,
-            hasAccount: !!account,
-        });
-
         const userAttributes =
             await this.userAttributesModel.getAttributeValuesForOrgMember({
                 organizationUuid: organizationUuid || '',
                 userUuid: userId || '',
             });
-
-        console.log('DEBUG userAttributes result:', userAttributes);
 
         const emailStatus = await this.emailModel.getPrimaryEmailStatus(userId);
         const intrinsicUserAttributes = emailStatus.isVerified
@@ -871,48 +861,25 @@ export class ProjectService extends BaseService {
 
         // Extract tenantId early for cache key (BigQuery multi-tenant support)
         const tenantId = userAttributes?.tenant_id?.[0];
-        console.log('DEBUG: Building cache key with tenantId =', tenantId);
 
         const cacheKey = `${projectUuid}${snowflakeVirtualWarehouse || ''}${
             databricksCompute || ''
         }${tenantId || ''}`;
-        console.log('DEBUG: Cache key =', cacheKey);
 
         // Check cache for existing client (always false if ssh tunnel was connected)
         const existingClient = this.warehouseClients[cacheKey] as
             | typeof this.warehouseClients[string]
             | undefined;
-        console.log('DEBUG: Cache hit?', !!existingClient);
         if (existingClient) {
-            console.log('DEBUG: Comparing credentials...');
-            if (warehouseSshCredentials.type === WarehouseTypes.BIGQUERY) {
-                const bigqueryExistingCreds =
-                    existingClient.credentials as CreateBigqueryCredentials;
-                const bigquerySshCreds =
-                    warehouseSshCredentials as CreateBigqueryCredentials;
-                console.log(
-                    'DEBUG: existingClient.credentials has tenantServiceAccountEmail?',
-                    !!bigqueryExistingCreds.tenantServiceAccountEmail,
-                );
-                console.log(
-                    'DEBUG: warehouseSshCredentials has tenantServiceAccountEmail?',
-                    !!bigquerySshCreds.tenantServiceAccountEmail,
-                );
-            }
             const credentialsEqual = deepEqual(
                 existingClient.credentials,
                 warehouseSshCredentials,
             );
-            console.log('DEBUG: Credentials equal?', credentialsEqual);
             if (credentialsEqual) {
                 // if existing client uses identical credentials, use it
-                console.log('DEBUG: Using cached warehouse client');
                 return { warehouseClient: existingClient, sshTunnel };
             }
         }
-        console.log(
-            'DEBUG: Creating new warehouse client (cache miss or credentials changed)',
-        );
         // otherwise create a new client and cache for future use
         const getSnowflakeWarehouse = (
             snowflakeCredentials: CreateSnowflakeCredentials,
@@ -956,126 +923,31 @@ export class ProjectService extends BaseService {
                 };
                 break;
             case WarehouseTypes.BIGQUERY:
-                // Add multi-tenant support for BigQuery
-                console.log('DEBUG BigQuery auth check:', {
-                    userAttributes,
-                    hasUserAttributes: !!userAttributes,
-                    tenantIdArray: userAttributes?.tenant_id,
-                    envVars: {
-                        BIGQUERY_TENANT_DATA_PROJECT:
-                            process.env.BIGQUERY_TENANT_DATA_PROJECT,
-                        BIGQUERY_DATASET_PREFIX:
-                            process.env.BIGQUERY_DATASET_PREFIX,
-                        BIGQUERY_BASE_DATASET_NAME:
-                            process.env.BIGQUERY_BASE_DATASET_NAME,
-                        NARVAR_TENANT_ID: process.env.NARVAR_TENANT_ID,
-                    },
-                });
-                const currentTenantId = userAttributes?.tenant_id?.[0]; // tenant_id is an array in UserAttributeValueMap
+                // Multi-tenant support for BigQuery with service account impersonation
+                const currentTenantId = userAttributes?.tenant_id?.[0];
                 const tenantDatasetProject =
                     process.env.BIGQUERY_TENANT_DATA_PROJECT;
-                const datasetPrefix = process.env.BIGQUERY_DATASET_PREFIX;
-                const baseDatasetName = process.env.BIGQUERY_BASE_DATASET_NAME;
-                const narvarTenantId = process.env.NARVAR_TENANT_ID;
 
                 // tenant_id is ALWAYS required for BigQuery access
-                // Reject null, undefined, or empty string values
                 if (!currentTenantId || currentTenantId.trim() === '') {
-                    console.log(
-                        'ERROR: Invalid or missing tenantId, throwing ForbiddenError',
-                        { currentTenantId },
-                    );
                     throw new ForbiddenError(
                         'Access denied. BigQuery access requires a valid tenant_id user attribute. Please contact your administrator.',
                     );
                 }
 
-                // Determine if this is the NARVAR master tenant
-                const isNarvarMasterTenant = currentTenantId === narvarTenantId;
-                const skipDatasetInjection = isNarvarMasterTenant;
-
-                // Determine if we're in multi-tenant mode or non-tenant mode
-                console.log(
-                    'DEBUG ProjectService: tenantId =',
-                    currentTenantId,
-                );
-                console.log(
-                    'DEBUG ProjectService: isNarvarMasterTenant =',
-                    isNarvarMasterTenant,
-                );
-                console.log(
-                    'DEBUG ProjectService: skipDatasetInjection =',
-                    skipDatasetInjection,
-                );
-                console.log(
-                    'DEBUG ProjectService: tenantDatasetProject =',
-                    tenantDatasetProject,
-                );
-                console.log(
-                    'DEBUG ProjectService: datasetPrefix =',
-                    datasetPrefix,
-                );
-
-                if (tenantDatasetProject && datasetPrefix) {
-                    // Multi-tenant mode: Use service account impersonation
-                    // Construct tenant service account email
-                    const tenantServiceAccountEmail = `${currentTenantId}-sa@${tenantDatasetProject}.iam.gserviceaccount.com`;
-
-                    console.log(
-                        'DEBUG ProjectService: Using multi-tenant mode with impersonation',
+                // BIGQUERY_TENANT_DATA_PROJECT is REQUIRED for secure multi-tenant access
+                if (!tenantDatasetProject) {
+                    throw new ForbiddenError(
+                        'Access denied. BigQuery multi-tenant configuration is missing. Please contact your administrator.',
                     );
-                    console.log(
-                        'DEBUG ProjectService: tenantServiceAccountEmail =',
-                        tenantServiceAccountEmail,
-                    );
-
-                    if (skipDatasetInjection) {
-                        // NARVAR master tenant: Use impersonation but NO dataset injection
-                        console.log(
-                            'DEBUG ProjectService: NARVAR master tenant - skipping dataset injection',
-                        );
-                        credentialsWithOverrides = {
-                            ...warehouseSshCredentials,
-                            tenantServiceAccountEmail,
-                            skipDatasetInjection: true,
-                        };
-                    } else {
-                        // Regular tenant: Use impersonation AND dataset injection
-                        console.log(
-                            'DEBUG ProjectService: Regular tenant - applying dataset injection',
-                        );
-                        console.log(
-                            'DEBUG ProjectService: baseDatasetName =',
-                            baseDatasetName,
-                        );
-                        credentialsWithOverrides = {
-                            ...warehouseSshCredentials,
-                            tenantId: currentTenantId,
-                            tenantServiceAccountEmail,
-                            tenantDatasetProject,
-                            datasetPrefix,
-                            baseDatasetName,
-                            skipDatasetInjection: false,
-                        };
-                    }
-                } else {
-                    // Non-tenant mode: Only allowed for NARVAR_TENANT_ID
-                    console.log(
-                        'DEBUG ProjectService: Using non-tenant mode (no impersonation)',
-                    );
-
-                    if (!isNarvarMasterTenant) {
-                        throw new ForbiddenError(
-                            'Access denied. Your tenant_id is not authorized to access this BigQuery instance in non-tenant mode.',
-                        );
-                    }
-
-                    // NARVAR master tenant in non-tenant mode: Standard credentials, no injection
-                    credentialsWithOverrides = {
-                        ...warehouseSshCredentials,
-                        skipDatasetInjection: true,
-                    };
                 }
+
+                // Use service account impersonation for all BigQuery access
+                const tenantServiceAccountEmail = `${currentTenantId}-sa@${tenantDatasetProject}.iam.gserviceaccount.com`;
+                credentialsWithOverrides = {
+                    ...warehouseSshCredentials,
+                    tenantServiceAccountEmail,
+                };
                 break;
             case WarehouseTypes.REDSHIFT:
             case WarehouseTypes.POSTGRES:
@@ -1090,30 +962,9 @@ export class ProjectService extends BaseService {
                 );
         }
 
-        console.log(
-            'DEBUG: About to create warehouse client with credentialsWithOverrides',
-        );
-        console.log(
-            'DEBUG: credentialsWithOverrides.type =',
-            credentialsWithOverrides.type,
-        );
-        if (credentialsWithOverrides.type === WarehouseTypes.BIGQUERY) {
-            const bigqueryCredentials =
-                credentialsWithOverrides as CreateBigqueryCredentials;
-            console.log(
-                'DEBUG: credentialsWithOverrides has tenantServiceAccountEmail?',
-                !!bigqueryCredentials.tenantServiceAccountEmail,
-            );
-            console.log(
-                'DEBUG: credentialsWithOverrides.tenantServiceAccountEmail =',
-                bigqueryCredentials.tenantServiceAccountEmail,
-            );
-        }
-
         const client = this.projectModel.getWarehouseClientFromCredentials(
             credentialsWithOverrides,
         );
-        console.log('DEBUG: Warehouse client created, storing in cache');
         this.warehouseClients[cacheKey] = client;
         return { warehouseClient: client, sshTunnel };
     }
@@ -1954,11 +1805,6 @@ export class ProjectService extends BaseService {
         dateZoom,
         parameters,
         availableParameterDefinitions,
-        tenantDatasetProject,
-        datasetPrefix,
-        tenantId,
-        baseDatasetName,
-        skipDatasetInjection,
     }: {
         metricQuery: MetricQuery;
         explore: Explore;
@@ -1969,11 +1815,6 @@ export class ProjectService extends BaseService {
         dateZoom?: DateZoom;
         parameters?: ParametersValuesMap;
         availableParameterDefinitions: ParameterDefinitions;
-        tenantDatasetProject?: string;
-        datasetPrefix?: string;
-        tenantId?: string;
-        baseDatasetName?: string;
-        skipDatasetInjection?: boolean;
     }): Promise<CompiledQuery> {
         const availableParameters = Object.keys(availableParameterDefinitions);
 
@@ -2001,11 +1842,6 @@ export class ProjectService extends BaseService {
             timezone,
             parameters,
             parameterDefinitions: availableParameterDefinitions,
-            tenantDatasetProject,
-            datasetPrefix,
-            tenantId,
-            baseDatasetName,
-            skipDatasetInjection,
         });
 
         return wrapSentryTransactionSync('QueryBuilder.buildQuery', {}, () =>
@@ -2108,11 +1944,6 @@ export class ProjectService extends BaseService {
             timezone: this.lightdashConfig.query.timezone || 'UTC',
             parameters,
             availableParameterDefinitions,
-            tenantDatasetProject: bqCreds?.tenantDatasetProject,
-            datasetPrefix: bqCreds?.datasetPrefix,
-            tenantId: bqCreds?.tenantId,
-            baseDatasetName: bqCreds?.baseDatasetName,
-            skipDatasetInjection: bqCreds?.skipDatasetInjection,
         });
 
         await sshTunnel.disconnect();
@@ -2964,11 +2795,6 @@ export class ProjectService extends BaseService {
                         dateZoom,
                         parameters,
                         availableParameterDefinitions,
-                        tenantDatasetProject: bqCreds?.tenantDatasetProject,
-                        datasetPrefix: bqCreds?.datasetPrefix,
-                        tenantId: bqCreds?.tenantId,
-                        baseDatasetName: bqCreds?.baseDatasetName,
-                        skipDatasetInjection: bqCreds?.skipDatasetInjection,
                     });
 
                     const { query } = fullQuery;
@@ -3619,11 +3445,6 @@ export class ProjectService extends BaseService {
             timezone: this.lightdashConfig.query.timezone || 'UTC',
             parameters,
             availableParameterDefinitions,
-            tenantDatasetProject: bqCreds?.tenantDatasetProject,
-            datasetPrefix: bqCreds?.datasetPrefix,
-            tenantId: bqCreds?.tenantId,
-            baseDatasetName: bqCreds?.baseDatasetName,
-            skipDatasetInjection: bqCreds?.skipDatasetInjection,
         });
 
         // Add a cache_autocomplete prefix to the query hash to avoid collisions with the results cache
@@ -5380,11 +5201,6 @@ export class ProjectService extends BaseService {
         warehouseClient: WarehouseClient,
         availableParameterDefinitions: ParameterDefinitions,
         parameters?: ParametersValuesMap,
-        tenantDatasetProject?: string,
-        datasetPrefix?: string,
-        tenantId?: string,
-        baseDatasetName?: string,
-        skipDatasetInjection?: boolean,
     ) {
         const totalQuery: MetricQuery = {
             ...metricQuery,
@@ -5419,11 +5235,6 @@ export class ProjectService extends BaseService {
             timezone: this.lightdashConfig.query.timezone || 'UTC',
             parameters,
             availableParameterDefinitions,
-            tenantDatasetProject,
-            datasetPrefix,
-            tenantId,
-            baseDatasetName,
-            skipDatasetInjection,
         });
 
         return { query, totalQuery };
@@ -5474,11 +5285,6 @@ export class ProjectService extends BaseService {
                 warehouseClient,
                 availableParameterDefinitions,
                 parameters,
-                bqCreds?.tenantDatasetProject,
-                bqCreds?.datasetPrefix,
-                bqCreds?.tenantId,
-                bqCreds?.baseDatasetName,
-                bqCreds?.skipDatasetInjection,
             );
 
             const queryTags: RunQueryTags = {
@@ -5547,11 +5353,6 @@ export class ProjectService extends BaseService {
                 warehouseClient,
                 availableParameterDefinitions,
                 parameters,
-                bqCreds?.tenantDatasetProject,
-                bqCreds?.datasetPrefix,
-                bqCreds?.tenantId,
-                bqCreds?.baseDatasetName,
-                bqCreds?.skipDatasetInjection,
             );
 
             const queryTags: RunQueryTags = {

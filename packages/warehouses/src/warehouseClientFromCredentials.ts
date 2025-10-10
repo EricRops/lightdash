@@ -24,21 +24,9 @@ export const warehouseClientFromCredentials = (
         case WarehouseTypes.REDSHIFT:
             return new RedshiftWarehouseClient(credentials);
         case WarehouseTypes.BIGQUERY: {
-            const bigqueryCredentials =
-                credentials as CreateBigqueryCredentials;
-            console.log(
-                'DEBUG warehouseClientFromCredentials: Creating BigQuery client with credentials:',
-                {
-                    type: bigqueryCredentials.type,
-                    tenantServiceAccountEmail:
-                        bigqueryCredentials.tenantServiceAccountEmail,
-                    tenantId: bigqueryCredentials.tenantId,
-                    tenantDatasetProject:
-                        bigqueryCredentials.tenantDatasetProject,
-                    datasetPrefix: bigqueryCredentials.datasetPrefix,
-                },
+            return new BigqueryWarehouseClient(
+                credentials as CreateBigqueryCredentials,
             );
-            return new BigqueryWarehouseClient(bigqueryCredentials);
         }
         case WarehouseTypes.DATABRICKS:
             return new DatabricksWarehouseClient(credentials);

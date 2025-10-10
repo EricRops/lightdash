@@ -83,12 +83,6 @@ export type BuildQueryProps = {
     parameterDefinitions: ParameterDefinitions;
     intrinsicUserAttributes: IntrinsicUserAttributes;
     timezone: string;
-    // Multi-tenant BigQuery support
-    tenantDatasetProject?: string;
-    datasetPrefix?: string;
-    tenantId?: string;
-    baseDatasetName?: string; // Base dataset name for master tenant
-    skipDatasetInjection?: boolean; // Skip dataset injection for NARVAR master tenant
 };
 
 export class MetricQueryBuilder {
@@ -100,60 +94,6 @@ export class MetricQueryBuilder {
 
     static assembleSqlParts(parts: Array<string | undefined>) {
         return parts.filter((l) => l !== undefined).join('\n');
-    }
-
-    /**
-     * Injects tenant dataset into table references for multi-tenant BigQuery support
-     * Converts: `project.dataset.table` or `dataset.table`
-     *
-     * Logic:
-     * - If skipDatasetInjection is true (NARVAR master tenant): No injection, use original dbt dataset
-     * - Master tenant (tenantId matches NARVAR_TENANT_ID): Uses baseDatasetName (e.g., lightdash_test_combined)
-     * - Other tenants: Uses per-tenant dataset pattern `${datasetPrefix}_${tenantId}` (e.g., lightdash_test_customer1)
-     */
-    private injectTenantDataset(sqlTable: string): string {
-        const {
-            tenantDatasetProject,
-            datasetPrefix,
-            tenantId,
-            baseDatasetName,
-            skipDatasetInjection,
-        } = this.args;
-
-        // Skip injection if flag is set (NARVAR master tenant)
-        if (skipDatasetInjection) {
-            return sqlTable;
-        }
-
-        // Only inject if tenant parameters are provided
-        if (!tenantDatasetProject || !tenantId) {
-            return sqlTable;
-        }
-
-        // Remove backticks for parsing
-        const cleanedTable = sqlTable.replace(/`/g, '');
-        const parts = cleanedTable.split('.');
-
-        // Extract the table name (last part)
-        const tableName = parts[parts.length - 1];
-
-        // Determine which dataset to use based on tenant
-        let tenantDataset: string;
-        const masterTenantId = process.env.NARVAR_TENANT_ID;
-
-        if (tenantId === masterTenantId && baseDatasetName) {
-            // Master tenant uses the base dataset with all data
-            tenantDataset = baseDatasetName;
-        } else if (datasetPrefix) {
-            // Other tenants use per-tenant datasets
-            tenantDataset = `${datasetPrefix}_${tenantId}`;
-        } else {
-            // Fallback if no dataset can be determined
-            return sqlTable;
-        }
-
-        // Return fully qualified table reference with backticks
-        return `\`${tenantDatasetProject}.${tenantDataset}.${tableName}\``;
     }
 
     private getDimensionsFilterSQL() {
@@ -743,14 +683,11 @@ export class MetricQueryBuilder {
             intrinsicUserAttributes,
             userAttributes = {},
         } = this.args;
-        let baseTable = replaceUserAttributesRaw(
+        const baseTable = replaceUserAttributesRaw(
             explore.tables[explore.baseTable].sqlTable,
             intrinsicUserAttributes,
             userAttributes,
         );
-
-        // Inject tenant dataset for multi-tenant BigQuery support
-        baseTable = this.injectTenantDataset(baseTable);
 
         const fieldQuoteChar = warehouseSqlBuilder.getFieldQuoteChar();
         return `FROM ${baseTable} AS ${fieldQuoteChar}${explore.baseTable}${fieldQuoteChar}`;
@@ -810,14 +747,11 @@ export class MetricQueryBuilder {
         const joinSQL = explore.joinedTables
             .filter((join) => joinedTables.has(join.table) || join.always)
             .map((join) => {
-                let joinTable = replaceUserAttributesRaw(
+                const joinTable = replaceUserAttributesRaw(
                     explore.tables[join.table].sqlTable,
                     intrinsicUserAttributes,
                     userAttributes,
                 );
-
-                // Inject tenant dataset for multi-tenant BigQuery support
-                joinTable = this.injectTenantDataset(joinTable);
 
                 const joinType = getJoinType(join.type);
 
