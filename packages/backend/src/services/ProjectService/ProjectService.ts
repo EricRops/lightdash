@@ -979,19 +979,33 @@ export class ProjectService extends BaseService {
                 const narvarTenantId = process.env.NARVAR_TENANT_ID;
 
                 // tenant_id is ALWAYS required for BigQuery access
-                if (!currentTenantId) {
+                // Reject null, undefined, or empty string values
+                if (!currentTenantId || currentTenantId.trim() === '') {
                     console.log(
-                        'ERROR: No tenantId found, throwing ForbiddenError',
+                        'ERROR: Invalid or missing tenantId, throwing ForbiddenError',
+                        { currentTenantId },
                     );
                     throw new ForbiddenError(
-                        'BigQuery access requires a tenant_id user attribute. Please contact your administrator to assign a tenant_id.',
+                        'Access denied. BigQuery access requires a valid tenant_id user attribute. Please contact your administrator.',
                     );
                 }
+
+                // Determine if this is the NARVAR master tenant
+                const isNarvarMasterTenant = currentTenantId === narvarTenantId;
+                const skipDatasetInjection = isNarvarMasterTenant;
 
                 // Determine if we're in multi-tenant mode or non-tenant mode
                 console.log(
                     'DEBUG ProjectService: tenantId =',
                     currentTenantId,
+                );
+                console.log(
+                    'DEBUG ProjectService: isNarvarMasterTenant =',
+                    isNarvarMasterTenant,
+                );
+                console.log(
+                    'DEBUG ProjectService: skipDatasetInjection =',
+                    skipDatasetInjection,
                 );
                 console.log(
                     'DEBUG ProjectService: tenantDatasetProject =',
@@ -1000,10 +1014,6 @@ export class ProjectService extends BaseService {
                 console.log(
                     'DEBUG ProjectService: datasetPrefix =',
                     datasetPrefix,
-                );
-                console.log(
-                    'DEBUG ProjectService: narvarTenantId =',
-                    narvarTenantId,
                 );
 
                 if (tenantDatasetProject && datasetPrefix) {
@@ -1018,33 +1028,53 @@ export class ProjectService extends BaseService {
                         'DEBUG ProjectService: tenantServiceAccountEmail =',
                         tenantServiceAccountEmail,
                     );
-                    console.log(
-                        'DEBUG ProjectService: baseDatasetName =',
-                        baseDatasetName,
-                    );
 
-                    credentialsWithOverrides = {
-                        ...warehouseSshCredentials,
-                        tenantId: currentTenantId,
-                        tenantServiceAccountEmail,
-                        tenantDatasetProject,
-                        datasetPrefix,
-                        baseDatasetName,
-                    };
+                    if (skipDatasetInjection) {
+                        // NARVAR master tenant: Use impersonation but NO dataset injection
+                        console.log(
+                            'DEBUG ProjectService: NARVAR master tenant - skipping dataset injection',
+                        );
+                        credentialsWithOverrides = {
+                            ...warehouseSshCredentials,
+                            tenantServiceAccountEmail,
+                            skipDatasetInjection: true,
+                        };
+                    } else {
+                        // Regular tenant: Use impersonation AND dataset injection
+                        console.log(
+                            'DEBUG ProjectService: Regular tenant - applying dataset injection',
+                        );
+                        console.log(
+                            'DEBUG ProjectService: baseDatasetName =',
+                            baseDatasetName,
+                        );
+                        credentialsWithOverrides = {
+                            ...warehouseSshCredentials,
+                            tenantId: currentTenantId,
+                            tenantServiceAccountEmail,
+                            tenantDatasetProject,
+                            datasetPrefix,
+                            baseDatasetName,
+                            skipDatasetInjection: false,
+                        };
+                    }
                 } else {
                     // Non-tenant mode: Only allowed for NARVAR_TENANT_ID
                     console.log(
                         'DEBUG ProjectService: Using non-tenant mode (no impersonation)',
                     );
 
-                    if (currentTenantId !== narvarTenantId) {
+                    if (!isNarvarMasterTenant) {
                         throw new ForbiddenError(
                             'Access denied. Your tenant_id is not authorized to access this BigQuery instance in non-tenant mode.',
                         );
                     }
 
-                    // Standard BigQuery credentials (no impersonation or dataset injection)
-                    credentialsWithOverrides = warehouseSshCredentials;
+                    // NARVAR master tenant in non-tenant mode: Standard credentials, no injection
+                    credentialsWithOverrides = {
+                        ...warehouseSshCredentials,
+                        skipDatasetInjection: true,
+                    };
                 }
                 break;
             case WarehouseTypes.REDSHIFT:
@@ -1928,6 +1958,7 @@ export class ProjectService extends BaseService {
         datasetPrefix,
         tenantId,
         baseDatasetName,
+        skipDatasetInjection,
     }: {
         metricQuery: MetricQuery;
         explore: Explore;
@@ -1942,6 +1973,7 @@ export class ProjectService extends BaseService {
         datasetPrefix?: string;
         tenantId?: string;
         baseDatasetName?: string;
+        skipDatasetInjection?: boolean;
     }): Promise<CompiledQuery> {
         const availableParameters = Object.keys(availableParameterDefinitions);
 
@@ -1973,6 +2005,7 @@ export class ProjectService extends BaseService {
             datasetPrefix,
             tenantId,
             baseDatasetName,
+            skipDatasetInjection,
         });
 
         return wrapSentryTransactionSync('QueryBuilder.buildQuery', {}, () =>
@@ -2079,6 +2112,7 @@ export class ProjectService extends BaseService {
             datasetPrefix: bqCreds?.datasetPrefix,
             tenantId: bqCreds?.tenantId,
             baseDatasetName: bqCreds?.baseDatasetName,
+            skipDatasetInjection: bqCreds?.skipDatasetInjection,
         });
 
         await sshTunnel.disconnect();
@@ -2934,6 +2968,7 @@ export class ProjectService extends BaseService {
                         datasetPrefix: bqCreds?.datasetPrefix,
                         tenantId: bqCreds?.tenantId,
                         baseDatasetName: bqCreds?.baseDatasetName,
+                        skipDatasetInjection: bqCreds?.skipDatasetInjection,
                     });
 
                     const { query } = fullQuery;
@@ -3588,6 +3623,7 @@ export class ProjectService extends BaseService {
             datasetPrefix: bqCreds?.datasetPrefix,
             tenantId: bqCreds?.tenantId,
             baseDatasetName: bqCreds?.baseDatasetName,
+            skipDatasetInjection: bqCreds?.skipDatasetInjection,
         });
 
         // Add a cache_autocomplete prefix to the query hash to avoid collisions with the results cache
@@ -5348,6 +5384,7 @@ export class ProjectService extends BaseService {
         datasetPrefix?: string,
         tenantId?: string,
         baseDatasetName?: string,
+        skipDatasetInjection?: boolean,
     ) {
         const totalQuery: MetricQuery = {
             ...metricQuery,
@@ -5386,6 +5423,7 @@ export class ProjectService extends BaseService {
             datasetPrefix,
             tenantId,
             baseDatasetName,
+            skipDatasetInjection,
         });
 
         return { query, totalQuery };
@@ -5440,6 +5478,7 @@ export class ProjectService extends BaseService {
                 bqCreds?.datasetPrefix,
                 bqCreds?.tenantId,
                 bqCreds?.baseDatasetName,
+                bqCreds?.skipDatasetInjection,
             );
 
             const queryTags: RunQueryTags = {
@@ -5512,6 +5551,7 @@ export class ProjectService extends BaseService {
                 bqCreds?.datasetPrefix,
                 bqCreds?.tenantId,
                 bqCreds?.baseDatasetName,
+                bqCreds?.skipDatasetInjection,
             );
 
             const queryTags: RunQueryTags = {

@@ -88,6 +88,7 @@ export type BuildQueryProps = {
     datasetPrefix?: string;
     tenantId?: string;
     baseDatasetName?: string; // Base dataset name for master tenant
+    skipDatasetInjection?: boolean; // Skip dataset injection for NARVAR master tenant
 };
 
 export class MetricQueryBuilder {
@@ -106,6 +107,7 @@ export class MetricQueryBuilder {
      * Converts: `project.dataset.table` or `dataset.table`
      *
      * Logic:
+     * - If skipDatasetInjection is true (NARVAR master tenant): No injection, use original dbt dataset
      * - Master tenant (tenantId matches NARVAR_TENANT_ID): Uses baseDatasetName (e.g., lightdash_test_combined)
      * - Other tenants: Uses per-tenant dataset pattern `${datasetPrefix}_${tenantId}` (e.g., lightdash_test_customer1)
      */
@@ -115,7 +117,13 @@ export class MetricQueryBuilder {
             datasetPrefix,
             tenantId,
             baseDatasetName,
+            skipDatasetInjection,
         } = this.args;
+
+        // Skip injection if flag is set (NARVAR master tenant)
+        if (skipDatasetInjection) {
+            return sqlTable;
+        }
 
         // Only inject if tenant parameters are provided
         if (!tenantDatasetProject || !tenantId) {

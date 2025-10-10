@@ -61,6 +61,8 @@ export type CreateBigqueryCredentials = {
     tenantServiceAccountEmail?: string;
     tenantDatasetProject?: string;
     datasetPrefix?: string;
+    baseDatasetName?: string; // Base dataset name for master tenant
+    skipDatasetInjection?: boolean; // Skip dataset injection for NARVAR master tenant
 };
 export const sensitiveCredentialsFieldNames = [
     'user',
